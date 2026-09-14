@@ -13,6 +13,14 @@ export const theme = {
       mid: '#f5a524',
       high: '#3dd68c',
     },
+    // Separate from `accent` (which already means "selected") and from the
+    // performance palette (which means "good/bad"), since a cell fading in
+    // after a live update is neither of those.
+    highlight: '#c9a94f',
+    connection: {
+      open: '#3dd68c',
+      reconnecting: '#f5a524',
+    },
   },
   spacing: {
     xs: '0.25rem',

@@ -16,10 +16,13 @@ type OrgNodeDto = {
 type OrgTreeNode = OrgNodeDto & { children: OrgTreeNode[] }
 ```
 
-`buildOrgTree(flat: OrgNodeDto[]): OrgTreeNode[]` — a two-pass builder
-(`entities/org/buildTree.ts`). Rejects malformed data instead of skipping it:
-a duplicate `id`, a `parentId` pointing nowhere, or a cycle each throw
-`OrgTreeBuildError`.
+`buildOrgTree(flat: OrgNodeDto[]): { roots: OrgTreeNode[]; byId: Map<string, OrgTreeNode> }`
+— a two-pass builder (`entities/org/buildTree.ts`). Rejects malformed data
+instead of skipping it: a duplicate `id`, a `parentId` pointing nowhere, or a
+cycle each throw `OrgTreeBuildError`. `byId` is the same `Map` the builder
+already constructs internally in its first pass — returning it is what lets
+`applyNodeChanges` (below) look up a mutated node in O(1) instead of walking
+the tree to find it. (Step/3 change: step/2 returned bare `OrgTreeNode[]`.)
 
 ## Aggregate — sums, never averages
 
@@ -88,11 +91,63 @@ for root in roots: visit(root, level=1, ancestors=[])
 `level` and `ancestors` fall out of the same traversal — there's no separate
 pass for either.
 
-**Not yet built:** the O(depth) incremental update (apply an SSE patch to one
-node, then walk to the root re-summing each ancestor's `Aggregate` from its
-own values + its children's current aggregates) is step/3 scope. Today,
-`aggregateOrgTree` is only ever called once per real data change (a fresh
-fetch or a revalidation that wasn't a `304`) — there is no patch path yet.
+## Patch contract and the incremental update (step/3)
+
+```ts
+type NodeChange = { id: string; headcount?: number; budget?: number; performance?: number; updatedAt: string }
+type NodeUpdatedEvent = { type: 'node.updated'; revision: number; changes: NodeChange[] }
+type HeartbeatEvent = { type: 'heartbeat'; revision: number }
+type StreamEvent = NodeUpdatedEvent | HeartbeatEvent  // zod discriminated union on `type`
+```
+
+`GET /api/stream` (SSE) emits these; see `docs/adr/0002-sse-over-websocket.md`
+for why SSE and why a hand-rolled reconnect instead of `EventSource`'s
+built-in one. `revision` increases monotonically across *both* event types
+from one shared counter (`server/src/stream/streamHub.ts`) — a gap on
+reconnect (`revision` jumping by more than expected) means the client missed
+patches and triggers a full refetch instead of an incremental apply.
+
+`applyNodeChanges(nodesById, aggregates, changes): Map<string, OrgAggregateRow>`
+(`entities/org/applyPatch.ts`, pure, no React) is the O(depth) update
+`docs/adr/0001-in-house-aggregation.md` was designed to enable:
+
+```
+for each change:
+  node = nodesById.get(change.id)
+  row  = aggregates.get(change.id)          # already has this node's ancestors, root-first
+  old  = node.headcount, node.budget, node.performance
+  new  = change.headcount ?? old.headcount, etc.
+
+  Δheadcount    = new.headcount - old.headcount
+  Δbudget       = new.budget - old.budget
+  ΔweightedPerf = new.headcount * new.performance - old.headcount * old.performance
+
+  mutate node in place (headcount/budget/performance/updatedAt)   # per CLAUDE.md §7
+  if all three deltas are 0: continue                              # no-op change, nothing to walk
+
+  for id in [change.id, ...row.ancestors.map(a => a.id)]:          # self, then root-first ancestors
+    current = result.get(id)                                       # read from the Map built THIS call
+    aggregate = current.aggregate + (Δheadcount, Δbudget, ΔweightedPerf)
+    result.set(id, { ...current, aggregate,
+                      avgPerformance: aggregate.headcountTotal > 0
+                        ? aggregate.weightedPerf / aggregate.headcountTotal : null })
+```
+
+Two details that make this correct rather than just fast:
+
+- Deltas are read from **`result`** (the Map being built this call), not from
+  the `aggregates` argument. A single patch batch can touch two nodes that
+  share an ancestor; reading from `result` means the second node's delta adds
+  onto the first node's already-applied delta on that shared ancestor instead
+  of clobbering it.
+- `OrgTreeNode` fields are mutated **in place**; `aggregates` is **not** —
+  each visited row gets a new object in a cloned-at-the-top `Map`, untouched
+  rows keep their original reference. See `docs/architecture.md`'s Realtime
+  section for why these two data structures are treated asymmetrically.
+
+Verified against `aggregateOrgTree` run from scratch after every step of a
+random patch sequence (`applyPatch.test.ts`) — CLAUDE.md §11 calls this "the
+strongest test in the project."
 
 ## Sorting
 

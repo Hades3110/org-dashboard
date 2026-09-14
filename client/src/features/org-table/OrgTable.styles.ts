@@ -66,10 +66,18 @@ export const Tr = styled.tr<{ $selected?: boolean }>`
   }
 `
 
-export const Td = styled.td`
+export const Td = styled.td<{ $isFresh?: boolean }>`
   padding: ${({ theme }) => theme.spacing.sm} ${({ theme }) => theme.spacing.md};
   border-bottom: 1px solid ${({ theme }) => theme.color.border};
   font-variant-numeric: tabular-nums;
+  background: ${({ theme, $isFresh }) => ($isFresh ? theme.color.highlight : 'transparent')};
+  transition: background-color ${({ theme }) => theme.duration.slow} ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    /* Same reasoning as the tree's HeadcountBadge: an instant, visible,
+       then-instantly-removed highlight, not a silent fade. */
+    transition: none;
+  }
 `
 
 export const NameCell = styled.div`

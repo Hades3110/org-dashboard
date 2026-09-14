@@ -99,3 +99,79 @@ sidesteps the escaping question entirely.
   API response (`curl .../api/org-tree`, summed headcount/budget/weighted
   performance with a one-off script) before trusting the table's numbers —
   852 чел. / 55 116 276 руб. / avg 65 for the root matched exactly.
+
+## 2026-09-14 — step/3 Polish
+
+**Asked:** SSE realtime patches per `CLAUDE.md` step/3 — applied in place,
+aggregates recomputed only for the changed node and its ancestors (O(depth)),
+a ~1.5s fade on changed cells, a connection indicator with real (not
+browser-default) exponential backoff, keyboard navigation across the table,
+and tree expansion animated via a height transition that respects
+`prefers-reduced-motion`. Scoped up front with the user: no server test
+runner this step — `patchGenerator.mutateRandomNodes` stays pure and testable
+later, but verification here is manual `curl -N` per `CLAUDE.md` §11's own
+stated method for this route.
+
+**Generated (Claude Code):** the server stream split (`streamHub.ts`,
+`patchGenerator.ts`, `streamRoute.ts`), the zod patch contract
+(`entities/org/patch.ts`), the O(depth) delta-walk (`entities/org/applyPatch.ts`
++ its property-based test comparing incremental results against
+`aggregateOrgTree` from scratch across 5 seeds × 20 random patches — zero
+mismatches), the generic SSE hook with injectable `EventSource` factory
+(`api/sse/useSseConnection.ts` + tests using a fake factory and mocked
+`Math.random`), the orchestration hook (`app/useOrgStream.ts`), the fade
+highlight hook (`useFreshHighlight`), the roving-tabindex hook
+(`useRovingIndex`, reused for both table headers and rows), the connection
+indicator feature, the tree's two-layer height-transition wrapper, and this
+session's docs (`adr/0002-sse-over-websocket.md`, and the step/3 additions to
+`data-model.md`, `architecture.md`, `interview-prep.md`).
+
+**Rewritten by hand:** nothing manually. Three issues were caught and fixed
+by Claude during its own work, before reaching the user:
+- A dependency-direction violation: `Freshness` was first defined inline in
+  `app/useOrgStream.ts` and imported from there into `features/org-tree`'s
+  `TreeNode.tsx`/`OrgTree.tsx` — `CLAUDE.md` §3 bans `features` importing
+  from `app`. Caught by re-reading the diff against that rule before moving
+  on; fixed by moving the type into `entities/org/patch.ts` instead (its
+  shape mirrors `NodeChange`'s optional fields, so it belongs with the other
+  patch-contract types) and re-exporting it from `entities/org/types.ts`.
+- Two rounds of TypeScript errors in `useSseConnection.ts`: a direct
+  `EventSourceLike` type for the real `EventSource` didn't line up with the
+  DOM lib's actual handler signatures (`(ev: Event) => any` vs. a bare
+  `() => void`), and widening the type to match broke `onmessage` instead
+  (native `MessageEvent` isn't assignable from the hook's minimal `{data:
+  string}` shape, by contravariance). `CLAUDE.md` §8 rules out `as unknown as`
+  as an escape hatch, so the actual fix was a real adapter object
+  (`defaultCreateEventSource`) that wraps the native `EventSource` and
+  translates its full-fat handler calls into the hook's own narrow ones —
+  not a cast, an object.
+- A false alarm during manual browser verification: `read_console_messages`
+  showed what looked like real crashes ("roots is not iterable",
+  "Cannot read properties of undefined") that survived a page reload. Opening
+  a brand-new tab on the same URL showed zero errors, proving the messages
+  were stale entries left over from the session's many live HMR reloads
+  (confirmed by the timestamps embedded in their stack traces), not a bug in
+  the code that typecheck/lint/test/build had already confirmed clean.
+
+**Non-obvious decisions worth knowing about:**
+- `ConnectionIndicator` ended up mounted in `app/OrgDashboard.tsx`'s new
+  `Toolbar` (next to `ViewSwitch`), not in `App.tsx`'s header as the approved
+  plan said. Connection status is only meaningful once `useOrgStream` exists,
+  which needs the loaded data (`roots`/`aggregates`/`byId`) as input — hoisting
+  the indicator up to `App.tsx` would mean either a second SSE connection or
+  extra prop plumbing the spec didn't ask for. Flagging this explicitly since
+  it's a deviation from the plan the user approved, not something silently
+  swapped in.
+- `aggregates` is cloned per patch (new `Map`, touched rows replaced) while
+  `OrgTreeNode` fields are mutated in place — an intentional asymmetry, not
+  an inconsistency; see `docs/architecture.md`'s Realtime section for the
+  reasoning and its `React.memo` caveat.
+- The reconnect/backoff sequence and recovery were verified against a real
+  killed server (`kill -9` on the port), not just unit tests. The first kill
+  showed the indicator entering `reconnecting` with a live countdown and
+  recovering to `Подключено` once the server restarted. A second kill (during
+  a deliberate immediate-recovery follow-up test) took down the entire
+  `concurrently`-wrapped dev server rather than just the server half — a
+  quirk of that process-group/port-kill combination under the preview
+  tooling, not a bug in the app — so that particular repeat run was abandoned
+  in favour of the evidence already gathered from the first kill.

@@ -10,6 +10,27 @@ export const ChildrenList = styled(TreeList)`
   padding-left: ${({ theme }) => theme.spacing.xl};
 `
 
+// Two layers, not one: a grid track sized 0fr collapses the TRACK, but an
+// intrinsically-sized <ul> inside it still fights that collapse unless
+// something also clips it directly — the inner box's own overflow:hidden is
+// the actual clip. min-height: 0 overrides grid/flex children's default
+// min-height: auto (their content's natural size), which would otherwise
+// prevent the 0fr state from fully collapsing.
+export const ExpandableRegion = styled.div<{ $expanded: boolean }>`
+  display: grid;
+  grid-template-rows: ${({ $expanded }) => ($expanded ? '1fr' : '0fr')};
+  transition: grid-template-rows ${({ theme }) => theme.duration.base} ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    transition: none;
+  }
+`
+
+export const ExpandableInner = styled.div`
+  overflow: hidden;
+  min-height: 0;
+`
+
 export const NodeRow = styled.div<{ $selected?: boolean }>`
   display: flex;
   align-items: center;
@@ -53,8 +74,20 @@ export const NodeName = styled.span`
   white-space: nowrap;
 `
 
-export const HeadcountBadge = styled.span`
+export const HeadcountBadge = styled.span<{ $isFresh?: boolean }>`
   flex: none;
   color: ${({ theme }) => theme.color.textMuted};
   font-size: ${({ theme }) => theme.font.size.sm};
+  border-radius: ${({ theme }) => theme.radius.sm};
+  padding: 0 ${({ theme }) => theme.spacing.xs};
+  background: ${({ theme, $isFresh }) => ($isFresh ? theme.color.highlight : 'transparent')};
+  transition: background-color ${({ theme }) => theme.duration.slow} ease;
+
+  @media (prefers-reduced-motion: reduce) {
+    /* A fade would flash invisibly for one frame with transition: none — an
+       instant, visible, then-instantly-removed highlight is the substitute
+       CLAUDE.md §8 asks for, so the color still applies, just without the
+       animated transition property. */
+    transition: none;
+  }
 `

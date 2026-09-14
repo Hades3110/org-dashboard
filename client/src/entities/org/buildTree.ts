@@ -8,8 +8,13 @@ export class OrgTreeBuildError extends Error {}
  * Two-pass flat-array -> tree builder. Rejects malformed data rather than
  * skipping nodes: a duplicate id, a parentId pointing nowhere, or a cycle are
  * all thrown as OrgTreeBuildError instead of being silently dropped.
+ *
+ * Returns the id->node lookup alongside the roots — step/3's incremental
+ * patch path needs O(1) access to the live node by id, and this map already
+ * exists internally during the build, so exporting it avoids a second
+ * from-scratch tree walk just to re-derive the same index.
  */
-export function buildOrgTree(flatNodes: OrgNodeDto[]): OrgTreeNode[] {
+export function buildOrgTree(flatNodes: OrgNodeDto[]): { roots: OrgTreeNode[]; byId: Map<string, OrgTreeNode> } {
   const byId = new Map<string, OrgTreeNode>()
 
   for (const node of flatNodes) {
@@ -39,7 +44,7 @@ export function buildOrgTree(flatNodes: OrgNodeDto[]): OrgTreeNode[] {
 
   assertNoCycles(roots, byId, flatNodes.length)
 
-  return roots
+  return { roots, byId }
 }
 
 // Every node not reachable from a root by walking parent -> child links is

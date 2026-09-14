@@ -22,7 +22,7 @@ describe('buildOrgTree', () => {
       node({ id: 'team-1', parentId: 'department-1' }),
     ]
 
-    const roots = buildOrgTree(flat)
+    const { roots } = buildOrgTree(flat)
 
     expect(roots).toHaveLength(1)
     expect(roots[0]?.id).toBe('company')
@@ -34,9 +34,24 @@ describe('buildOrgTree', () => {
   it('supports a forest of multiple roots', () => {
     const flat: OrgNodeDto[] = [node({ id: 'a', parentId: null }), node({ id: 'b', parentId: null })]
 
-    const roots = buildOrgTree(flat)
+    const { roots } = buildOrgTree(flat)
 
     expect(roots.map((r) => r.id).sort()).toEqual(['a', 'b'])
+  })
+
+  it('returns an id->node lookup covering every node, in sync with the tree', () => {
+    const flat: OrgNodeDto[] = [
+      node({ id: 'company', parentId: null }),
+      node({ id: 'division-1', parentId: 'company' }),
+      node({ id: 'department-1', parentId: 'division-1' }),
+    ]
+
+    const { roots, byId } = buildOrgTree(flat)
+
+    expect(byId.size).toBe(3)
+    expect(byId.get('department-1')?.parentId).toBe('division-1')
+    // Same object identity as reached by walking the tree, not a copy.
+    expect(byId.get('division-1')).toBe(roots[0]?.children[0])
   })
 
   it('throws on a duplicate id', () => {

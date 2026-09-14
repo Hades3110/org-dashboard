@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react'
 import type { OrgTreeNode } from '@/entities/org/buildTree'
+import type { Freshness } from '@/entities/org/patch'
 import { TreeNode } from './TreeNode'
 import { TreeList } from './TreeNode.styles'
 import { useTreeExpansion } from './useTreeExpansion'
@@ -9,11 +10,13 @@ export function OrgTree({
   selectedId,
   revealAncestorIds,
   revealToken,
+  freshness,
 }: {
   roots: OrgTreeNode[]
   selectedId: string | null
   revealAncestorIds: string[]
   revealToken: number
+  freshness: Freshness
 }) {
   const { isExpanded, toggle, expandAncestors } = useTreeExpansion(roots)
   const nodeRefs = useRef(new Map<string, HTMLLIElement>())
@@ -62,6 +65,7 @@ export function OrgTree({
           onToggle={toggle}
           selectedId={selectedId}
           registerNode={registerNode}
+          freshness={freshness}
         />
       ))}
     </TreeList>
