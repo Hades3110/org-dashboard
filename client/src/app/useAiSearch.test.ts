@@ -29,7 +29,7 @@ function deferred<T>() {
 
 async function advanceDebounce() {
   await act(async () => {
-    vi.advanceTimersByTime(400)
+    vi.advanceTimersByTime(250)
     await Promise.resolve()
   })
 }
@@ -49,6 +49,24 @@ describe('useAiSearch', () => {
 
     expect(result.current.status).toBe('idle')
     expect(result.current.visibleRows).toBe(rows)
+  })
+
+  it('debounces the plain-text filter by 250ms instead of applying it per keystroke', async () => {
+    // Regression test: CLAUDE.md §13 specifies a 250ms-debounced name
+    // filter — step/4's AI upgrade must not remove that, only layer on top.
+    const rows = [row({ id: 'Технологии' }), row({ id: 'Продажи' })]
+    const { result } = renderHook(() => useAiSearch(rows))
+
+    act(() => result.current.setQuery('технолог'))
+    expect(result.current.visibleRows).toBe(rows) // unfiltered — debounce hasn't elapsed yet
+
+    act(() => {
+      vi.advanceTimersByTime(249)
+    })
+    expect(result.current.visibleRows).toBe(rows) // still not yet
+
+    await advanceDebounce() // the 250th ms
+    expect(result.current.visibleRows.map((r) => r.id)).toEqual(['Технологии'])
   })
 
   it('applies the AI-resolved structured filter once it resolves', async () => {

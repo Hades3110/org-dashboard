@@ -22,15 +22,15 @@ fields and instructing JSON-only output. The response text is parsed
 (stripping a possible ` ```json ` fence) and zod-validated against a
 `StructuredFilter` schema before being trusted.
 
-The client (`app/useAiSearch.ts`) never blocks on this call: the raw query
-drives an **instant** local plain-text filter (`filterRowsByName`, already
-built in step/2) while a 400ms-debounced copy of the query fires the AI
-request in the background. On success, the view upgrades to the AI's
-structured filter; on **any** failure — non-2xx status, timeout, or a
-response that isn't valid JSON matching the schema — the client simply never
-upgrades, silently staying on the already-displayed plain-text result.
-"Fallback" is therefore not a distinct code path on the client, just the
-absence of a still-current AI result.
+The client (`app/useAiSearch.ts`) debounces the query by 250ms — the exact
+value `CLAUDE.md` §13 specifies for the plain-text name filter — and that
+single debounced value drives both `filterRowsByName` (already built in
+step/2) and the AI request in the background. On success, the view upgrades
+to the AI's structured filter; on **any** failure — non-2xx status, timeout,
+or a response that isn't valid JSON matching the schema — the client simply
+never upgrades, silently staying on the plain-text result. "Fallback" is
+therefore not a distinct code path on the client, just the absence of a
+still-current AI result.
 
 The key lives only in the `server` container's environment
 (`ANTHROPIC_API_KEY`); no build step or bundle ever references it.
@@ -48,11 +48,21 @@ The key lives only in the `server` container's environment
   one of the three conditions the fallback exists to absorb, meaning the
   simpler approach's occasional misses are a designed-for outcome, not a
   gap to engineer away.
-- **Blocking the search input on the AI call.** Would mean every keystroke
-  either waits on a network round trip or needs its own separate debounce
-  tuning against typing speed. Layering the AI call as a background upgrade
-  over an already-working instant filter avoids ever presenting a search box
-  that does nothing while "thinking."
+- **A separate, longer debounce just for the AI call**, on top of the
+  spec'd 250ms for the plain-text filter. Considered and rejected: the
+  250ms pause the user already has to make before the text filter itself
+  updates is also a perfectly reasonable trigger point for the AI request —
+  adding a second, larger delay on top would only mean the AI upgrade lands
+  later without buying anything, since a single debounced value already
+  guarantees at most one request per pause in typing.
+- **Blocking the search input on the AI call**, i.e. not showing the
+  plain-text result until the AI call resolves. Rejected: it would mean
+  every search either waits on a network round trip beyond the spec'd
+  250ms, or needs the plain-text result suppressed for no reason while a
+  slower network call is still in flight. Layering the AI call as a
+  background upgrade over the already-debounced plain-text result avoids
+  ever presenting a search box that does nothing while "thinking," without
+  reintroducing per-keystroke filtering to get there.
 - **A visible "AI search failed" error state.** Rejected in favor of silence:
   the plain-text result was already on screen before the AI call started
   (progressive enhancement, not a fallback the user has to notice) — an error
@@ -80,3 +90,13 @@ The key lives only in the `server` container's environment
 - `AI_SEARCH_MODEL` and `AI_SEARCH_TIMEOUT_MS` are both overridable via
   `.env` without a code change, in case the default model is deprecated or
   8s proves too tight or too generous in practice.
+
+**Correction (same day):** the design as first shipped applied the
+plain-text filter to every keystroke with no debounce at all, only
+debouncing the AI trigger (at 400ms) — a real regression against
+`CLAUDE.md` §13's explicit "name filter with 250ms debounce," introduced
+when filtering moved out of `OrgTable` into this hook and not caught before
+merging. Found via an external code review, verified against the source
+before accepting the finding, and fixed: a single 250ms debounce now drives
+both the plain-text filter and the AI trigger, as described above. See
+`docs/ai-log.md` for the fuller write-up.

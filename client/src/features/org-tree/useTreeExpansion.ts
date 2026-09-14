@@ -1,16 +1,19 @@
 import { useCallback, useState } from 'react'
 import type { OrgTreeNode } from '@/entities/org/types'
 
-// "The second level is expanded by default": with a company -> divisions ->
-// departments -> teams tree, that means levels 1 and 2 (the root and its
-// direct children) start open, so departments are visible but teams are not.
+// "The second level is expanded by default" (CLAUDE.md §13): with a company
+// -> divisions -> departments -> teams tree, expanding the root is what
+// reveals the second level (divisions) — only the root itself starts open.
+// Divisions are visible but not themselves expanded, so departments (level 3)
+// start collapsed, one click away. (A prior version of this function also
+// expanded the divisions, which additionally revealed departments by
+// default — a real deviation from the spec's literal wording, not a
+// documented interpretation; see docs/ai-log.md's step/1 entry, written
+// against the same "second level" reading this fix restores.)
 function computeDefaultExpanded(roots: OrgTreeNode[]): Set<string> {
   const expanded = new Set<string>()
   for (const root of roots) {
     expanded.add(root.id)
-    for (const child of root.children) {
-      expanded.add(child.id)
-    }
   }
   return expanded
 }

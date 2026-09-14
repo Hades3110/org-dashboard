@@ -219,16 +219,18 @@ server/src/routes/aiSearchRoute.ts   POST /api/ai-search
 ```
 
 Same split as the Realtime feature above: logic in `app`, presentation in
-`features`. `useAiSearch` never blocks the input on the network — the raw
-query drives an instant local `filterRowsByName` (existing step/2 function,
-reused via the allowed `app → features` import), while a 400ms-debounced
-copy of the query triggers the AI call in the background. On success,
-`visibleRows` upgrades to `applyStructuredFilter`'s result **only if** the
-result's captured query still matches the current one — otherwise (any
-failure, or the user has typed further since) it just stays on the
-already-displayed plain-text view. See `docs/adr/0003-ai-search-fallback.md`
-for the full reasoning, including why this isn't SDK-based and why the
-fallback is silent rather than an error state.
+`features`. `useAiSearch` debounces the raw query by 250ms — the exact
+value `CLAUDE.md` §13 specifies for the plain-text name filter, which step/4
+must not silently relax just because a network call sits behind it — and
+that single debounced value both drives `filterRowsByName` (existing step/2
+function, reused via the allowed `app → features` import) and triggers the
+AI call in the background. On success, `visibleRows` upgrades to
+`applyStructuredFilter`'s result **only if** the result's captured query
+still matches the current debounced one — otherwise (any failure, or the
+user has typed further since) it just stays on the plain-text result. See
+`docs/adr/0003-ai-search-fallback.md` for the full reasoning, including why
+this isn't SDK-based and why the fallback is silent rather than an error
+state.
 
 `OrgTable` no longer does its own filtering (that moved up to where the
 AI/fallback decision happens) — it now just sorts whatever `rows` it's

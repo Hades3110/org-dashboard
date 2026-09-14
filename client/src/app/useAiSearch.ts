@@ -5,23 +5,27 @@ import type { AiSearchStatus } from '@/features/ai-search/types'
 import { filterRowsByName } from '@/features/org-table/filterRowsByName'
 import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue'
 
-const DEBOUNCE_MS = 400
+// CLAUDE.md §13 (step/2) specifies "name filter with 250ms debounce" — a
+// requirement that predates step/4's AI upgrade but is not superseded by it.
+// The same debounced value drives both the plain-text filter and the AI
+// trigger: one 250ms pause after the user stops typing, not two different
+// delays for two different reasons.
+const DEBOUNCE_MS = 250
 
 /**
  * Orchestration for the AI search feature — logic lives here in `app`,
  * `features/ai-search/AiSearchInput` stays purely presentational, same split
  * as `useOrgStream` / `ConnectionIndicator` in step/3.
  *
- * The raw `query` drives an instant local `filterRowsByName` (existing
+ * The debounced query drives an immediate local `filterRowsByName` (existing
  * function from `features/org-table`, reused via the allowed `app → features`
- * import) so typing never waits on a network round trip. A 400ms-debounced
- * copy of the query triggers the AI call in the background; on success,
- * `visibleRows` upgrades to the structured filter's result. On any failure —
- * or once the user has typed past whatever query produced the last AI
- * result — it silently stays on the instant text-filtered view. "Fallback"
- * is therefore not a distinct code path for `visibleRows`, just the absence
- * of a still-current AI result; `status` alone reports which one is active
- * for `AiSearchInput`'s indicator.
+ * import) the moment the 250ms pause elapses, and also triggers the AI call
+ * in the background. On success, `visibleRows` upgrades to the structured
+ * filter's result. On any failure — or once the user has typed past whatever
+ * query produced the last AI result — it silently stays on the plain-text
+ * result. "Fallback" is therefore not a distinct code path for `visibleRows`,
+ * just the absence of a still-current AI result; `status` alone reports
+ * which one is active for `AiSearchInput`'s indicator.
  */
 export function useAiSearch(
   rows: OrgAggregateRow[],
@@ -70,12 +74,12 @@ export function useAiSearch(
   }, [debouncedQuery, fetchImpl])
 
   const visibleRows = useMemo(() => {
-    const trimmedQuery = query.trim()
+    const trimmedQuery = debouncedQuery.trim()
     if (status === 'ai' && aiResult && aiResult.query === trimmedQuery) {
       return applyStructuredFilter(rows, aiResult.filter)
     }
-    return filterRowsByName(rows, query)
-  }, [rows, query, status, aiResult])
+    return filterRowsByName(rows, debouncedQuery)
+  }, [rows, debouncedQuery, status, aiResult])
 
   return { query, setQuery, visibleRows, status }
 }

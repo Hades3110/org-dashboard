@@ -130,15 +130,42 @@ already used for `useSseConnection`'s `EventSource` factory.
 
 **Q: Walk through what happens end to end when a user types a natural-language
 query.**
-A: The raw keystroke drives an instant local plain-text filter
-(`filterRowsByName`) so the table narrows immediately, with zero network
-latency. Once typing pauses for 400ms, the debounced query fires
-`POST /api/ai-search`. If that resolves with a valid structured filter *for
-the query currently in the box*, the view upgrades to
-`applyStructuredFilter`'s (usually tighter, semantically aware) result. If it
-fails for any reason, or the user keeps typing before it resolves, the view
-just never upgrades — it's still showing the plain-text result from step one,
-which was correct and current the whole time.
+A: Typing pauses for 250ms — the debounce `CLAUDE.md` §13 specifies for the
+name filter — and that single debounced value does two things at once: it
+runs the local plain-text filter (`filterRowsByName`) so the table narrows
+immediately with zero network latency, and it fires `POST /api/ai-search` in
+the background. If that resolves with a valid structured filter *for the
+query currently in the box*, the view upgrades to `applyStructuredFilter`'s
+(usually tighter, semantically aware) result. If it fails for any reason, or
+the user keeps typing before it resolves, the view just never upgrades —
+it's still showing the plain-text result, which was correct and current the
+whole time.
+
+**Q: The plain-text filter used to apply on every keystroke with no
+debounce — why does it debounce now?**
+A: That was a regression, not a design choice: when filtering moved out of
+`OrgTable` and into `app/useAiSearch` for step/4, the AI trigger got its own
+400ms debounce, but the plain-text path was left applying to the raw query
+directly — silently dropping the 250ms debounce `CLAUDE.md` §13 explicitly
+requires for the name filter. Caught by an external review, verified against
+the actual source (not taken on faith), and fixed by using one 250ms
+debounced value for both the text filter and the AI trigger — see
+`docs/adr/0003-ai-search-fallback.md`'s Correction note and
+`docs/ai-log.md` for the full write-up.
+
+**Q: "The second level is expanded by default" — what does that mean with a
+4-level tree, and did the implementation always match it?**
+A: With company → divisions → departments → teams, expanding the *root*
+node is what reveals the second level (divisions) underneath it — so the
+literal reading is: only the root starts expanded. It didn't always match
+that: the original `useTreeExpansion.ts` also expanded the divisions
+themselves, which additionally revealed departments (level 3) by default.
+That was a real gap between the code and even this project's own step/1
+`ai-log.md` entry, which described the narrower, spec-correct behavior from
+the start — the code just didn't implement what was written down. Fixed by
+only adding the root's own id to the default-expanded set; covered by
+`useTreeExpansion.test.ts`, which didn't exist before this fix (the default
+expansion depth had no test at all until an external review flagged it).
 
 **Q: The AI response is free-form text — how do you keep an untrusted model
 response from breaking the app?**

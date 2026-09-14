@@ -11,6 +11,8 @@ core table, realtime polish, Docker/Nginx + AI search). See
 
 ![Split view: tree and table side by side, live SSE data, connection indicator](docs/screenshots/split-view.png)
 
+![Narrow-viewport tree view: the tree/table switch, root expanded with divisions visible and departments collapsed by default](docs/screenshots/tree-view.png)
+
 ## Quick start (development)
 
 ```bash
@@ -20,7 +22,10 @@ npm run dev
 
 This starts the API server on `http://localhost:3001` and the client on
 `http://localhost:5173` (client dev requests to `/api/*` are proxied to the
-server — see `client/vite.config.ts`).
+server — see `client/vite.config.ts`). The server also loads a root-level
+`.env` if one exists (`tsx watch --env-file-if-exists=../.env`, Node's
+built-in loader — no extra dependency), so `cp .env.example .env` and filling
+in `ANTHROPIC_API_KEY` enables AI search here too, not just under Docker.
 
 Other commands (run from the repo root, applied across both workspaces where
 relevant):

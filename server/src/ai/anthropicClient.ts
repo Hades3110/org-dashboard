@@ -54,7 +54,11 @@ export async function callAnthropic(query: string, options: AnthropicClientOptio
     })
 
     if (!response.ok) {
-      throw new Error(`Anthropic API responded ${response.status}`)
+      // Anthropic's error body (type + message) is far more useful for
+      // debugging than the status code alone — e.g. distinguishing "bad
+      // model id" from "key not scoped to a workspace" both surface as 400.
+      const errorBody = await response.text()
+      throw new Error(`Anthropic API responded ${response.status}: ${errorBody}`)
     }
 
     const body = (await response.json()) as { content?: { type: string; text?: string }[] }
