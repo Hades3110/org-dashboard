@@ -41,6 +41,11 @@ export const theme = {
       xl: '1.5rem',
     },
   },
+  // Width at which tree and table are shown side by side instead of behind a
+  // switch (CLAUDE.md §13, step/2).
+  breakpoints: {
+    split: '1280px',
+  },
 } as const
 
 export type AppTheme = typeof theme

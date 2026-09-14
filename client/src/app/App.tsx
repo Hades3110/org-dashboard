@@ -1,5 +1,5 @@
 import styled from 'styled-components'
-import { OrgTree } from '@/features/org-tree/OrgTree'
+import { OrgDashboard } from './OrgDashboard'
 import { ThemeProvider } from './providers/ThemeProvider'
 
 const Page = styled.div`
@@ -7,6 +7,10 @@ const Page = styled.div`
   padding: ${({ theme }) => theme.spacing.xl};
   max-width: 960px;
   margin: 0 auto;
+
+  @media (min-width: ${({ theme }) => theme.breakpoints.split}) {
+    max-width: 1600px;
+  }
 `
 
 const Header = styled.header`
@@ -25,7 +29,7 @@ export function App() {
         <Header>
           <Title>Org Dashboard</Title>
         </Header>
-        <OrgTree />
+        <OrgDashboard />
       </Page>
     </ThemeProvider>
   )

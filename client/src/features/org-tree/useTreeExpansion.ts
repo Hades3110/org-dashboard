@@ -32,5 +32,17 @@ export function useTreeExpansion(roots: OrgTreeNode[]) {
     })
   }, [])
 
-  return { isExpanded, toggle }
+  // Batched: expands every id in one update, and returns the same Set
+  // reference (no-op, no re-render) if all of them are already expanded.
+  const expandAncestors = useCallback((ids: string[]) => {
+    if (ids.length === 0) return
+    setExpanded((prev) => {
+      if (ids.every((id) => prev.has(id))) return prev
+      const next = new Set(prev)
+      for (const id of ids) next.add(id)
+      return next
+    })
+  }, [])
+
+  return { isExpanded, toggle, expandAncestors }
 }
