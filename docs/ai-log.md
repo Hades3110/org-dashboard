@@ -207,21 +207,23 @@ self-caught in step/3 with `Freshness`. Fixed the same way: moved the type
 into the feature (`features/ai-search/types.ts`) and had `app` import it from
 there instead, which is the allowed direction.
 
-**Abandoned, not delivered:** the README screenshots. Six attempts at an
-automated headless-Chrome capture of the running app (`--headless=new` and
-legacy `--headless`, fresh throwaway profiles, `--virtual-time-budget`,
+**Initially abandoned, then fixed:** the README screenshot. Six attempts at
+an automated headless-Chrome capture of the running app (`--headless=new`
+and legacy `--headless`, fresh throwaway profiles, `--virtual-time-budget`,
 `--run-all-compositor-stages-before-draw`, wall-clock timeouts up to 20s) all
 hung indefinitely and never wrote a file — a control screenshot of a static
-page (example.com) with the identical command succeeded in ~6s, isolating the
-cause to this app specifically: the page holds an open SSE `EventSource`
+page (example.com) with the identical command succeeded in ~6s, isolating
+the cause to this app specifically: the page holds an open SSE `EventSource`
 connection, and Chrome's `--screenshot` flag appears to wait on network-idle
-before capturing, which a permanently-open stream never reaches. Rather than
-keep burning time on headless-browser tooling instead of the actual
-deliverable, this was cut — `docs/screenshots/` was removed rather than left
-half-populated. The app itself was visually verified extensively via the
-interactive Browser tool throughout this session (tree, table, split view,
-connection states); a real screenshot just needs a person with a normal
-browser tab, which takes seconds.
+before capturing, which a permanently-open stream never reaches. This was
+cut from the original step/4 handoff rather than left half-populated. In a
+follow-up ask from the user, one more flag closed the gap: `--timeout=5000`
+(headless Chrome's own hard cap on how long it waits before capturing
+regardless of pending network activity) succeeded on the first retry —
+`docs/screenshots/split-view.png`, embedded in the README, is a real capture
+of the running dev server at 1600×1000 (wide enough to trigger the ≥1280px
+split view), taken *after* the two user-reported bugs in the entry below
+were fixed, so it also serves as visual proof they're gone.
 
 **Non-obvious decisions worth knowing about:**
 - The AI call is a background upgrade over an always-current instant
@@ -245,3 +247,92 @@ browser tab, which takes seconds.
   proxying through, and — the one that actually mattered — live SSE frames
   arriving through nginx within seconds (`curl -N`), proving
   `proxy_buffering off` works rather than assuming the config was right.
+
+## 2026-09-14 — step/4 follow-up: two user-reported bugs
+
+**Asked:** two bugs the user found by hand right after step/4 landed, both
+in the AI-search + realtime interaction that no automated test had covered.
+
+**Bug 1 — split-view columns drift as the table's row count changes.**
+Reported as: "when I search and there's no result, the table gets narrower
+and the tree gets wider." Root cause: `Panel` (the actual CSS grid item in
+`OrgDashboard.styles.ts`) had no `min-width` override, so its default
+automatic minimum width came from its content's min-content size rather
+than being 0 — with two `1fr` columns, whichever panel's content was
+intrinsically wider (the table, with long row/breadcrumb text, when it had
+many rows) pulled width away from the other, and the split visibly reflowed
+every time the search's result count changed the table's own min-content.
+Verified with the browser tool before and after: at a 1500px viewport, tree
+and table measured 564px/864px before the fix (already unequal at rest, not
+just when empty) and a stable 714px/714px after, in both the empty-result
+and full-table states. Fix: `min-width: 0` on `Panel` — a single line,
+letting each column size purely from its `1fr` share; `TableScroll`'s
+existing `overflow-x: auto` still absorbs any content wider than that via
+internal horizontal scroll.
+
+**Bug 2 — clearing a search after live patches flashes many fields as
+"just updated."** Reported as: "after I search then clear, a lot of fields
+get marked as updated." Root cause: `useFreshHighlight` treated any non-null
+`changedAt` as fresh on mount, regardless of age — and `useOrgStream`'s
+`freshness` map is never pruned, so any node ever touched by an SSE patch
+keeps a timestamp in it indefinitely. Filtering the table via AI search
+unmounts the rows it hides (the first thing in this codebase to actually
+unmount `TableRow`s rather than just reordering or CSS-hiding them); when
+the search clears, those rows remount, and every field with *any* recorded
+past change — even minutes old — read as "just changed" under the old
+non-null check. Fix: judge freshness by age (`Date.now() - changedAt <
+durationMs`), and on a mount that lands mid-window, show the correct
+*remaining* fade time instead of restarting a full 1.5s. Existing tests had
+to move from arbitrary small numbers (`1000`, `2000`) as `changedAt` to
+`Date.now()`-relative values under `vi.setSystemTime`, since the new logic
+is genuinely time-aware; two new tests cover the stale-on-mount (no flash)
+and fresh-on-mount (correct remaining duration) cases. Verified live: typed
+a search, waited ~9s for a couple of SSE mutation cycles to touch hidden
+nodes, cleared the search — no highlight, versus a wall of flashing cells
+before the fix.
+
+**Non-obvious decisions worth knowing about:**
+- Both bugs share a root shape: a value that's correct in isolation
+  (`min-width: auto`'s content-based default; "has this ever changed") but
+  wrong once combined with a *new* dynamic this app didn't have before
+  step/4 — rows that can actually unmount. Neither was caught by the
+  existing test suite because nothing exercised unmount/remount of table
+  rows until AI search made that possible; worth remembering that adding a
+  filtering feature to an already-tested view can silently invalidate
+  assumptions ("this only ever mounts once") that were true until then.
+- Fixed both by finding the smallest correct primitive fix (one CSS
+  property; one age comparison) rather than working around the symptom
+  (e.g. clearing `freshness` entries on filter change, which would have
+  been a band-aid tied to this one trigger instead of the general "judge
+  freshness by age" rule that also happens to fix it).
+
+## 2026-09-14 — step/1 doc debt closed: cache layer and no-UI-kit ADRs
+
+**Asked:** the two ADRs `CLAUDE.md` §12 named as a step/1 minimum
+("in-house cache layer, and... no UI-kit") but that step/1 shipped without.
+Flagged during step/2 planning and deliberately deferred rather than mixed
+into step/2's or step/3's own unit of work, per the user's explicit "keep it
+separate" call at the time; asked for directly once step/4 wrapped up.
+
+**Generated (Claude Code):** `docs/adr/0004-in-house-cache-layer.md` and
+`docs/adr/0005-no-ui-kit.md`, in the same Context/Decision/Alternatives/
+Consequences format as 0001–0003. Both are dated to today but marked
+explicitly as written retroactively for a step/1 decision, rather than
+silently backdated or presented as if they'd existed all along — the
+Context section of each says so directly, and each cites the actual
+already-implemented code (`api/cache/useCachedResource.ts`,
+`shared/ui/*`, `app/theme.ts`) rather than describing a decision in the
+abstract.
+
+**Non-obvious decisions worth knowing about:**
+- Writing an ADR after the code exists is a real, if lesser, version of the
+  exact risk `CLAUDE.md` §12 warns about for `ai-log.md` ("reconstructing
+  from memory... is both painful and dishonest") — the mitigation here was
+  reading the actual shipped code before writing either ADR, rather than
+  reconstructing the reasoning from memory of the step/1 session, so the
+  "Decision" sections describe what's really in the repository, not an
+  idealized retelling.
+- This closes every ADR `CLAUDE.md` §12 names as a minimum for the project
+  (in-house cache, SSE over WebSocket, in-house aggregation, no UI kit) —
+  plus 0003 for AI search, which wasn't on that original minimum list but
+  was written at decision time in step/4, the way §12 actually prefers.

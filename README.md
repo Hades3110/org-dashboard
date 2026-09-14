@@ -9,6 +9,8 @@ Status: **step/4 — Production** (all four milestones complete: foundation,
 core table, realtime polish, Docker/Nginx + AI search). See
 [CLAUDE.md](CLAUDE.md) for the full spec and milestone breakdown.
 
+![Split view: tree and table side by side, live SSE data, connection indicator](docs/screenshots/split-view.png)
+
 ## Quick start (development)
 
 ```bash
