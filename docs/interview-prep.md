@@ -116,3 +116,57 @@ either a callback prop per caller (extra API surface for one key) or the hook
 guessing at intent. Leaving it out keeps the hook's contract to "how focus
 moves," and each call site's own `onKeyDown` handles what Enter *does* right
 next to the rest of that call site's logic.
+
+## step/4 — Production and AI search
+
+**Q: Why a raw `fetch` to the Anthropic API instead of their SDK?**
+A: The whole integration is one endpoint, two headers, and a JSON body —
+`server/src/ai/anthropicClient.ts` covers it in about twenty lines with an
+`AbortController` for the timeout. Adding a dependency for that isn't
+justified (CLAUDE.md §2 requires naming what a new dependency replaces and
+what it costs), and a plain wrapper is exactly as testable via an injectable
+`fetchImpl` parameter as an SDK client would be, following the same seam
+already used for `useSseConnection`'s `EventSource` factory.
+
+**Q: Walk through what happens end to end when a user types a natural-language
+query.**
+A: The raw keystroke drives an instant local plain-text filter
+(`filterRowsByName`) so the table narrows immediately, with zero network
+latency. Once typing pauses for 400ms, the debounced query fires
+`POST /api/ai-search`. If that resolves with a valid structured filter *for
+the query currently in the box*, the view upgrades to
+`applyStructuredFilter`'s (usually tighter, semantically aware) result. If it
+fails for any reason, or the user keeps typing before it resolves, the view
+just never upgrades — it's still showing the plain-text result from step one,
+which was correct and current the whole time.
+
+**Q: The AI response is free-form text — how do you keep an untrusted model
+response from breaking the app?**
+A: Two gates before it's ever used. First, `parseFilterResponse` strips a
+possible ` ```json ` fence and calls `JSON.parse` inside a try/catch — any
+parse failure returns `null`. Second, whatever *does* parse goes through a
+zod schema (`structuredFilterSchema`) — wrong types, out-of-range numbers, or
+an unrecognized shape all fail validation and also collapse to the same
+"couldn't get a filter" outcome. The route treats both failure points
+identically (`502`), and the client treats every non-2xx identically
+(silently stay on the plain-text result) — there's exactly one failure
+handling path on each side, not one per failure mode.
+
+**Q: How do you guarantee the API key never ends up in the client bundle?**
+A: Structurally, not by convention. `ANTHROPIC_API_KEY` is read only inside
+`server/src/routes/aiSearchRoute.ts`, a file that's never imported by
+anything under `client/`. In the Docker topology, only the `server` service's
+container environment carries the key at all — the `client` image is built
+by a separate Dockerfile that never receives it as a build arg, so there's no
+step where it *could* leak into the bundle, not just an assumption that it
+won't.
+
+**Q: Why does `/api/stream` get its own nginx `location` block instead of
+one rule for all of `/api/`?**
+A: `proxy_buffering off` is the whole reason that block exists — without it,
+nginx accumulates the proxied response before forwarding it, which would
+turn a live SSE stream into occasional bursts and break the ~1.5s
+fade-highlight timing from step/3. Plain request/response routes under
+`/api/` (org-tree, ai-search) benefit from nginx's normal buffering — there's
+nothing to gain by turning it off there, so only the streaming route opts
+out.

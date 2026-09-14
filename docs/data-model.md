@@ -149,6 +149,32 @@ Verified against `aggregateOrgTree` run from scratch after every step of a
 random patch sequence (`applyPatch.test.ts`) — CLAUDE.md §11 calls this "the
 strongest test in the project."
 
+## Structured search filter (step/4)
+
+```ts
+type StructuredFilter = {
+  nameContains?: string
+  minHeadcount?: number; maxHeadcount?: number
+  minBudget?: number; maxBudget?: number
+  minPerformance?: number; maxPerformance?: number
+  level?: number
+}
+```
+
+Defined independently on server (`server/src/ai/filterSchema.ts`, validates
+the AI's JSON output) and client (`entities/org/search.ts`, validates the
+server's HTTP response) — same no-shared-package precedent as the patch
+contract above. All fields are optional and AND-combined; `{}` matches
+everything. See `docs/adr/0003-ai-search-fallback.md` for how a query
+becomes one of these, and what happens when it can't.
+
+`applyStructuredFilter(rows, filter): OrgAggregateRow[]`
+(`entities/org/search.ts`) applies it — same same-reference-on-no-op trick as
+`filterRowsByName`. One rule worth calling out: a `minPerformance` /
+`maxPerformance` bound never matches a row whose `avgPerformance` is `null`
+(a subtree with zero headcount has nothing to compare against a performance
+bound — treated as "doesn't qualify," not "matches everything").
+
 ## Sorting
 
 ```ts

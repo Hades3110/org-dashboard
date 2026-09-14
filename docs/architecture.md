@@ -208,6 +208,62 @@ delayed a render. `Enter` is deliberately left out of the hook: it means
 per-caller behaviour — so each call site handles `Enter` itself alongside the
 shared hook's arrow/Home/End handling.
 
+## AI search (step/4)
+
+```
+entities/org/search.ts        StructuredFilter zod schema + applyStructuredFilter (pure)
+app/useAiSearch.ts             orchestration — debounce, fetch, fallback decision, freshness-free
+features/ai-search/            AiSearchInput.tsx — presentational only
+server/src/ai/                 anthropicClient.ts, filterSchema.ts, parseFilterResponse.ts
+server/src/routes/aiSearchRoute.ts   POST /api/ai-search
+```
+
+Same split as the Realtime feature above: logic in `app`, presentation in
+`features`. `useAiSearch` never blocks the input on the network — the raw
+query drives an instant local `filterRowsByName` (existing step/2 function,
+reused via the allowed `app → features` import), while a 400ms-debounced
+copy of the query triggers the AI call in the background. On success,
+`visibleRows` upgrades to `applyStructuredFilter`'s result **only if** the
+result's captured query still matches the current one — otherwise (any
+failure, or the user has typed further since) it just stays on the
+already-displayed plain-text view. See `docs/adr/0003-ai-search-fallback.md`
+for the full reasoning, including why this isn't SDK-based and why the
+fallback is silent rather than an error state.
+
+`OrgTable` no longer does its own filtering (that moved up to where the
+AI/fallback decision happens) — it now just sorts whatever `rows` it's
+handed. `AiSearchInput` is composed inside the table's `Panel` in
+`OrgDashboardView`, not the global `Toolbar`, since it only ever affects
+table rows.
+
+## Deployment (step/4)
+
+```
+docker-compose.yml     two services: server (internal only), client (nginx, published)
+server/Dockerfile      multi-stage: npm ci + tsc build -> node runtime
+client/Dockerfile       multi-stage: npm ci + vite build -> nginx serving the static output
+client/nginx.conf       gzip, /api/* proxy to the server service, proxy_buffering off for /api/stream
+```
+
+`server` is not published to the host (`expose` only) — `client`'s nginx is
+the only container with a host-mapped port, and reaches `server` over the
+compose network by service name (`http://server:3001`). Two consequences of
+that topology, not incidental:
+
+- The "API key never reaches the bundle" requirement (CLAUDE.md §13) holds
+  **by construction**: only the `server` service's environment gets
+  `ANTHROPIC_API_KEY`; nothing in the `client` build args or image ever
+  references it.
+- `/api/stream` gets its own `location` block in `nginx.conf` with
+  `proxy_buffering off` — without it, nginx would buffer the SSE response
+  and patches would arrive in bursts instead of as they're written, silently
+  breaking the ~1.5s fade-highlight timing from step/3. Plain `/api/`
+  traffic keeps normal buffering.
+
+Static assets are gzipped via nginx's built-in `gzip on` directive rather
+than a build-time compression plugin — avoids a new client-side dependency
+for something a two-line nginx config already does.
+
 ## Formatting and sorting contracts
 
 See `docs/data-model.md` for the `Aggregate`/`OrgAggregateRow` shapes, the

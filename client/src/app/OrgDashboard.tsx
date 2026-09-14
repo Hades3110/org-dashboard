@@ -5,6 +5,7 @@ import { fetchOrgTree, ORG_TREE_CACHE_KEY } from '@/api/orgTreeApi'
 import { aggregateOrgTree, type OrgAggregateRow } from '@/entities/org/aggregate'
 import { buildOrgTree, OrgTreeBuildError, type OrgTreeNode } from '@/entities/org/buildTree'
 import type { OrgNodeDto } from '@/entities/org/schema'
+import { AiSearchInput } from '@/features/ai-search/AiSearchInput'
 import { ConnectionIndicator } from '@/features/connection/ConnectionIndicator'
 import { OrgTable } from '@/features/org-table/OrgTable'
 import { OrgTree } from '@/features/org-tree/OrgTree'
@@ -12,6 +13,7 @@ import { EmptyState } from '@/shared/ui/EmptyState'
 import { ErrorMessage } from '@/shared/ui/ErrorMessage'
 import { Spinner } from '@/shared/ui/Spinner'
 import { DashboardGrid, Panel } from './OrgDashboard.styles'
+import { useAiSearch } from './useAiSearch'
 import { useOrgStream } from './useOrgStream'
 import { ViewSwitch, type ViewMode } from './ViewSwitch'
 
@@ -106,6 +108,7 @@ function OrgDashboardView({
   })
 
   const rows = useMemo(() => [...aggregates.values()], [aggregates])
+  const { query, setQuery, visibleRows, status: searchStatus } = useAiSearch(rows)
   const revealAncestorIds = selectedId ? (aggregates.get(selectedId)?.ancestors.map((a) => a.id) ?? []) : []
 
   const handleRowClick = (id: string) => {
@@ -130,7 +133,8 @@ function OrgDashboardView({
           />
         </Panel>
         <Panel $activeWhenNarrow={viewMode === 'table'}>
-          <OrgTable rows={rows} selectedId={selectedId} onRowClick={handleRowClick} freshness={freshness} />
+          <AiSearchInput query={query} onQueryChange={setQuery} status={searchStatus} />
+          <OrgTable rows={visibleRows} selectedId={selectedId} onRowClick={handleRowClick} freshness={freshness} />
         </Panel>
       </DashboardGrid>
     </>

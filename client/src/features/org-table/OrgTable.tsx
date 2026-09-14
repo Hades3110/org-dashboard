@@ -1,11 +1,9 @@
-import { useMemo, useState, type ChangeEvent, type KeyboardEvent } from 'react'
+import { useMemo, type KeyboardEvent } from 'react'
 import type { OrgAggregateRow } from '@/entities/org/aggregate'
 import type { Freshness } from '@/entities/org/patch'
-import { useDebouncedValue } from '@/shared/hooks/useDebouncedValue'
 import { useRovingIndex } from '@/shared/hooks/useRovingIndex'
 import { EmptyState } from '@/shared/ui/EmptyState'
-import { filterRowsByName } from './filterRowsByName'
-import { FilterInput, Table, TableScroll, TableWrapper, Tbody, Th, Thead } from './OrgTable.styles'
+import { Table, TableScroll, TableWrapper, Tbody, Th, Thead } from './OrgTable.styles'
 import { sortRows, type SortColumn } from './sortRows'
 import { TableRow } from './TableRow'
 import { useSortState } from './useSortState'
@@ -29,31 +27,19 @@ export function OrgTable({
   onRowClick: (id: string) => void
   freshness: Freshness
 }) {
-  const [query, setQuery] = useState('')
-  const debouncedQuery = useDebouncedValue(query, 250)
   const { sort, handleHeaderClick, handleHeaderDoubleClick } = useSortState()
 
-  const visibleRows = useMemo(() => {
-    const filtered = filterRowsByName(rows, debouncedQuery)
-    return sortRows(filtered, sort.column, sort.direction)
-  }, [rows, debouncedQuery, sort])
+  // `rows` arrives already filtered (plain-text or AI-narrowed — see
+  // app/useAiSearch.ts); this component's only remaining job is sorting.
+  const visibleRows = useMemo(() => sortRows(rows, sort.column, sort.direction), [rows, sort])
 
   // Two independent roving-tabindex groups: headers and rows. Collapses what
   // used to be ~75 individual Tab stops (5 headers + one per row) down to 2.
   const headerRoving = useRovingIndex(COLUMNS.length, 'horizontal')
   const rowRoving = useRovingIndex(visibleRows.length, 'vertical')
 
-  const handleQueryChange = (event: ChangeEvent<HTMLInputElement>) => setQuery(event.target.value)
-
   return (
     <TableWrapper>
-      <FilterInput
-        type="search"
-        placeholder="Фильтр по названию…"
-        aria-label="Фильтр по названию подразделения"
-        value={query}
-        onChange={handleQueryChange}
-      />
       <TableScroll>
         <Table>
           <Thead>

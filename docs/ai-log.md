@@ -175,3 +175,73 @@ by Claude during its own work, before reaching the user:
   quirk of that process-group/port-kill combination under the preview
   tooling, not a bug in the app — so that particular repeat run was abandoned
   in favour of the evidence already gathered from the first kill.
+
+## 2026-09-14 — step/4 Production and AI search
+
+**Asked:** the final milestone per `CLAUDE.md` step/13 — `docker compose up`
+bringing up client and server behind Nginx (gzip, API proxying,
+`proxy_buffering off` for the SSE route, key configured through `.env`), and
+natural-language search returning a structured filter with a plain-text
+fallback on error/timeout/invalid JSON, key never reaching the bundle.
+Scoped up front with the user: Anthropic Claude API via a raw `fetch` (no new
+SDK dependency), built without an API key in this environment (none was set)
+— fully verified via the fallback path, real key to be added afterward.
+
+**Generated (Claude Code):** the AI search feature end to end — server
+(`ai/anthropicClient.ts`, `ai/filterSchema.ts`, `ai/parseFilterResponse.ts`,
+`routes/aiSearchRoute.ts`) and client (`entities/org/search.ts` + tests,
+`app/useAiSearch.ts` + tests with an injected fake `fetch` covering success,
+non-2xx, invalid body, and a superseded-request race), the
+`features/ai-search/AiSearchInput` presentational component, the
+`OrgTable`/`OrgDashboard` rewiring to move filtering up to where the
+AI/fallback decision happens; the full Docker/Nginx setup
+(`docker-compose.yml`, both `Dockerfile`s, `nginx.conf`, `.env.example`,
+`.dockerignore`); `docs/adr/0003-ai-search-fallback.md` and this session's
+additions to `data-model.md`, `architecture.md`, `interview-prep.md`.
+
+**Rewritten by hand:** nothing manually. One dependency-direction slip caught
+and fixed before it landed: `AiSearchStatus` was first going to be defined
+inline in `app/useAiSearch.ts` and imported from there into
+`features/ai-search/AiSearchInput.tsx` — the same `features → app` mistake
+self-caught in step/3 with `Freshness`. Fixed the same way: moved the type
+into the feature (`features/ai-search/types.ts`) and had `app` import it from
+there instead, which is the allowed direction.
+
+**Abandoned, not delivered:** the README screenshots. Six attempts at an
+automated headless-Chrome capture of the running app (`--headless=new` and
+legacy `--headless`, fresh throwaway profiles, `--virtual-time-budget`,
+`--run-all-compositor-stages-before-draw`, wall-clock timeouts up to 20s) all
+hung indefinitely and never wrote a file — a control screenshot of a static
+page (example.com) with the identical command succeeded in ~6s, isolating the
+cause to this app specifically: the page holds an open SSE `EventSource`
+connection, and Chrome's `--screenshot` flag appears to wait on network-idle
+before capturing, which a permanently-open stream never reaches. Rather than
+keep burning time on headless-browser tooling instead of the actual
+deliverable, this was cut — `docs/screenshots/` was removed rather than left
+half-populated. The app itself was visually verified extensively via the
+interactive Browser tool throughout this session (tree, table, split view,
+connection states); a real screenshot just needs a person with a normal
+browser tab, which takes seconds.
+
+**Non-obvious decisions worth knowing about:**
+- The AI call is a background upgrade over an always-current instant
+  plain-text filter, not a blocking request the input waits on — typing
+  never stalls on network latency, and "fallback" has no separate visual
+  state to get wrong, since it's just the AI upgrade never arriving.
+- `server` is not published to the host in `docker-compose.yml` — only
+  `client`'s nginx is. This isn't just topology tidiness: it's what makes
+  "the API key never reaches the client bundle" true by construction rather
+  than by discipline, since the key only ever exists in an environment the
+  client build process never touches.
+- `AI_SEARCH_MODEL`/`AI_SEARCH_TIMEOUT_MS` read from `process.env` with
+  `|| undefined` / a truthy check rather than `??` — docker-compose passes an
+  unset `.env` value through as an empty string, not as absent, and `??`
+  wouldn't have caught that (`Number('')` is `0`, not `NaN`) — treating `''`
+  the same as unset was necessary for `callAnthropic`'s own default
+  parameters to actually kick in when nothing was configured.
+- Confirmed the full stack in real Docker containers, not just reasoning
+  about the Dockerfiles: `docker compose up --build`, then `curl` checks for
+  gzip (`Content-Encoding` header on the JS bundle), the org-tree API
+  proxying through, and — the one that actually mattered — live SSE frames
+  arriving through nginx within seconds (`curl -N`), proving
+  `proxy_buffering off` works rather than assuming the config was right.

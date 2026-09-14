@@ -17,6 +17,16 @@ export const DashboardGrid = styled.div`
 
 export const Panel = styled.div<{ $activeWhenNarrow: boolean }>`
   display: ${({ $activeWhenNarrow }) => ($activeWhenNarrow ? 'block' : 'none')};
+  /* A grid item's default automatic minimum width is its content's
+     min-content size, not 0 — without this override, the two 1fr columns
+     don't actually split 50/50: whichever panel's content is wider (e.g.
+     the table with many rows vs. few) drags width away from the other, and
+     the split visibly shifts as the table's row count changes (e.g. an
+     empty search result narrows the table and widens the tree). Setting
+     min-width to 0 lets each column size purely from its 1fr share;
+     TableScroll's own overflow-x: auto still scrolls internally if content
+     is wider than that. */
+  min-width: 0;
 
   @media (min-width: ${({ theme }) => theme.breakpoints.split}) {
     display: block;

@@ -1,0 +1,9 @@
+node_modules
+**/node_modules
+**/dist
+.git
+.idea
+*.iml
+docs
+Task.pdf
+*.md

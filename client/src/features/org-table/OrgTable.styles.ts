@@ -6,19 +6,6 @@ export const TableWrapper = styled.div`
   gap: ${({ theme }) => theme.spacing.md};
 `
 
-export const FilterInput = styled.input`
-  padding: ${({ theme }) => theme.spacing.sm} ${({ theme }) => theme.spacing.md};
-  border: 1px solid ${({ theme }) => theme.color.border};
-  border-radius: ${({ theme }) => theme.radius.sm};
-  background: ${({ theme }) => theme.color.surface};
-  color: ${({ theme }) => theme.color.text};
-
-  &:focus-visible {
-    outline: 2px solid ${({ theme }) => theme.color.focusRing};
-    outline-offset: 2px;
-  }
-`
-
 export const TableScroll = styled.div`
   overflow-x: auto;
 `
